@@ -227,3 +227,8 @@ export async function questionCount(where: SQL | undefined) {
     .where(where);
   return row?.n ?? 0;
 }
+
+/** Questions a teacher has taken or replied to (one teacher's Q&A, for admins). */
+export function teacherInvolved(teacherId: number): SQL {
+  return sql`(${s.qaThreads.teacherId} = ${teacherId} or exists (select 1 from qa_messages m where m.thread_id = "qa_threads"."id" and m.sender_id = ${teacherId} and m.sender_type = 'teacher'))`;
+}

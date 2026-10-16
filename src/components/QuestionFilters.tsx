@@ -6,18 +6,20 @@ import { buttonClass } from "./ui";
  * A plain GET form, so filters live in the URL and the back button works.
  */
 export function QuestionFilters({
-  q, course, status, courses, statuses, counts,
+  q, course, status, courses, statuses, counts, teachers, teacher = null,
 }: {
   q: string;
   course: number | null;
   status: string;
+  teachers?: { id: number; name: string }[];
+  teacher?: number | null;
   courses: { id: number; name: string }[];
   statuses: { key: string; label: string }[];
   counts?: Record<string, number>;
 }) {
   const href = (next: Record<string, string | number | null>) => {
     const p = new URLSearchParams();
-    const merged = { q, course, status, ...next };
+    const merged = { q, course, teacher, status, ...next };
     for (const [k, v] of Object.entries(merged)) if (v !== null && v !== "" && !(k === "status" && v === "all")) p.set(k, String(v));
     return `?${p}`;
   };
@@ -31,6 +33,13 @@ export function QuestionFilters({
             className="h-11 rounded-xl border border-rule bg-sheet px-3 text-base sm:max-w-64">
             <option value="">All courses</option>
             {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
+        {teachers && teachers.length > 0 && (
+          <select name="teacher" defaultValue={teacher ?? ""} aria-label="Teacher"
+            className="h-11 rounded-xl border border-rule bg-sheet px-3 text-base sm:max-w-56">
+            <option value="">All teachers</option>
+            {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         )}
         {status !== "all" && <input type="hidden" name="status" value={status} />}
@@ -50,8 +59,8 @@ export function QuestionFilters({
             </Link>
           );
         })}
-        {(q || course) && (
-          <Link href={href({ q: null, course: null, page: null })} className="inline-flex h-9 items-center px-2 text-sm text-pen hover:underline">
+        {(q || course || teacher) && (
+          <Link href={href({ q: null, course: null, teacher: null, page: null })} className="inline-flex h-9 items-center px-2 text-sm text-pen hover:underline">
             Clear search
           </Link>
         )}

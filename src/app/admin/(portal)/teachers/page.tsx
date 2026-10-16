@@ -32,7 +32,7 @@ export default async function TeachersPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-rule bg-paper"><tr>
               <th className={th}>Teacher</th><th className={`${th} hidden md:table-cell`}>Courses</th>
-              <th className={`${th} text-right`}>Replies</th><th className={th}>Rating</th><th className={th}>Status</th>
+              <th className={`${th} text-right`}>Replies</th><th className={th}>Rating</th><th className={th}>Status</th><th className={th}><span className="sr-only">Q&amp;A</span></th>
             </tr></thead>
             <tbody className="divide-y divide-rule">
               {teachers.map((t) => (
@@ -45,6 +45,9 @@ export default async function TeachersPage() {
                   <td className={`${td} text-right text-ink`}>{t.replies}</td>
                   <td className={td}><Stars value={t.rating} /></td>
                   <td className={td}>{t.status === "active" ? <Badge tone="green">Active</Badge> : <Badge tone="red">Disabled</Badge>}</td>
+                  <td className={td}>
+                    <Link href={`/admin/teachers/${t.id}#qa`} className="whitespace-nowrap rounded-lg bg-pen-soft px-2.5 py-1 text-xs font-semibold text-pen hover:bg-pen hover:text-white">View Q&amp;A</Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

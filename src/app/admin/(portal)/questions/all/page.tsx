@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requirePortal } from "@/lib/dal";
-import { questionRows, questionCount, questionSearch, STATUS_GROUPS } from "@/lib/qa";
+import { questionRows, questionCount, questionSearch, teacherInvolved, STATUS_GROUPS } from "@/lib/qa";
 import { PageTitle } from "@/components/PortalHeader";
 import { EmptyState, Pagination } from "@/components/ui";
 import { Tabs } from "@/components/Tabs";
@@ -13,7 +13,7 @@ const PER_PAGE = 30;
 
 export default async function AdminAllQuestions({
   searchParams,
-}: { searchParams: Promise<{ q?: string; course?: string; status?: string; page?: string }> }) {
+}: { searchParams: Promise<{ q?: string; course?: string; teacher?: string; status?: string; page?: string }> }) {
   await requirePortal("admin");
   const s = schema;
   const sp = await searchParams;
@@ -26,8 +26,11 @@ export default async function AdminAllQuestions({
     .from(s.qaThreads).innerJoin(s.courses, eq(s.courses.id, s.qaThreads.courseId))
     .where(sql`${s.qaThreads.status} <> 'draft'`).orderBy(asc(s.courses.name));
   const courseId = courses.find((c) => c.id === Number(sp.course))?.id ?? null;
+  const teachers = await db.select({ id: s.users.id, name: s.users.name }).from(s.users)
+    .where(eq(s.users.role, "teacher")).orderBy(asc(s.users.name));
+  const teacherId = teachers.find((t) => t.id === Number(sp.teacher))?.id ?? null;
 
-  const base = and(courseId ? eq(s.qaThreads.courseId, courseId) : undefined, questionSearch(q));
+  const base = and(courseId ? eq(s.qaThreads.courseId, courseId) : undefined, teacherId ? teacherInvolved(teacherId) : undefined, questionSearch(q));
   const where = and(base, inArray(s.qaThreads.status, group.statuses));
 
   const [total, rows, ...groupCounts] = await Promise.all([
@@ -36,7 +39,7 @@ export default async function AdminAllQuestions({
     ...STATUS_GROUPS.map((g) => questionCount(and(base, inArray(s.qaThreads.status, g.statuses)))),
   ]);
   const counts = Object.fromEntries(STATUS_GROUPS.map((g, i) => [g.key, groupCounts[i]]));
-  const pageHref = (p: number) => `?${new URLSearchParams({ ...(q ? { q } : {}), ...(courseId ? { course: String(courseId) } : {}), ...(group.key !== "all" ? { status: group.key } : {}), page: String(p) })}`;
+  const pageHref = (p: number) => `?${new URLSearchParams({ ...(q ? { q } : {}), ...(courseId ? { course: String(courseId) } : {}), ...(teacherId ? { teacher: String(teacherId) } : {}), ...(group.key !== "all" ? { status: group.key } : {}), page: String(p) })}`;
 
   return (
     <>
@@ -45,11 +48,12 @@ export default async function AdminAllQuestions({
         { href: "/admin/questions", label: "By course", active: false },
         { href: "/admin/questions/all", label: "All questions", count: counts.all, active: true },
       ]} />
-      <QuestionFilters q={q} course={courseId} status={group.key} courses={courses} statuses={STATUS_GROUPS} counts={counts} />
+      <QuestionFilters q={q} course={courseId} status={group.key} courses={courses} statuses={STATUS_GROUPS} counts={counts}
+        teachers={teachers} teacher={teacherId} />
 
       {rows.length === 0 ? (
-        <EmptyState title={q || courseId || group.key !== "all" ? "No questions match" : "No questions yet"}>
-          {q || courseId || group.key !== "all" ? "Try another search or filter." : "Questions appear here as soon as students start asking."}
+        <EmptyState title={q || courseId || teacherId || group.key !== "all" ? "No questions match" : "No questions yet"}>
+          {q || courseId || teacherId || group.key !== "all" ? "Try another search or filter." : "Questions appear here as soon as students start asking."}
         </EmptyState>
       ) : (
         <>
