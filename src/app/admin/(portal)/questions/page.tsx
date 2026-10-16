@@ -3,6 +3,7 @@ import { requirePortal } from "@/lib/dal";
 import { PageTitle } from "@/components/PortalHeader";
 import { EmptyState, SectionTitle, StatGrid } from "@/components/ui";
 import { CourseQueueCard } from "@/components/QuestionList";
+import { Tabs } from "@/components/Tabs";
 
 export const metadata = { title: "Q&A" };
 
@@ -16,6 +17,10 @@ export default async function AdminQuestions() {
   return (
     <>
       <PageTitle sub="Questions grouped by course. Courses with questions waiting for a teacher come first.">Q&amp;A</PageTitle>
+      <Tabs label="View" items={[
+        { href: "/admin/questions", label: "By course", active: true },
+        { href: "/admin/questions/all", label: "All questions", count: sum("total"), active: false },
+      ]} />
       <StatGrid cols={4} items={[
         { label: "Waiting for a teacher", value: sum("waiting") },
         { label: "Taken by a teacher", value: sum("inProgress") },

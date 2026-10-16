@@ -9,7 +9,7 @@ type State = { error?: string; ok?: string; secret?: string } | undefined;
 export function SubmitButton({
   children, pending: pendingLabel, variant, size, className, name, value,
 }: {
-  children: React.ReactNode; pending?: string; variant?: "primary" | "secondary" | "ghost" | "danger";
+  children: React.ReactNode; pending?: string; variant?: "primary" | "secondary" | "ghost" | "danger" | "accent";
   size?: "md" | "sm"; className?: string; name?: string; value?: string;
 }) {
   const { pending } = useFormStatus();
@@ -32,7 +32,7 @@ export function ActionForm({
   submit?: string;
   pending?: string;
   className?: string;
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "accent";
   size?: "md" | "sm";
   resetOnOk?: boolean;
   footer?: React.ReactNode;

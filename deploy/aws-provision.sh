@@ -5,9 +5,9 @@
 #   - CloudWatch alarm: stops the server if outgoing traffic in a day goes over a cap
 #   - AWS Budget: emails you as soon as any cost appears
 #   - SSH open only to this computer's IP
-# Usage: deploy/aws-provision.sh you@example.com   (region: AWS_REGION, default ap-south-1 Mumbai)
+# Usage: deploy/aws-provision.sh [alert-email]   (region: AWS_REGION, default ap-south-1 Mumbai)
 set -euo pipefail
-EMAIL="${1:?Give the email address for cost alerts}"
+EMAIL="${1:-}"
 export AWS_REGION="${AWS_REGION:-ap-south-1}"
 AWS=~/.local/bin/aws
 NAME=bigbang-portal
@@ -19,9 +19,10 @@ ACCOUNT=$($AWS sts get-caller-identity --query Account --output text)
 echo "Account $ACCOUNT, region $AWS_REGION"
 
 # Free-tier instance type for this account and region (t3.micro or t2.micro).
-TYPE=$($AWS ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true \
-  --query "InstanceTypes[?InstanceType=='t3.micro' || InstanceType=='t2.micro'].InstanceType | sort(@) | [-1]" --output text)
-[ "$TYPE" = "None" ] || [ -z "$TYPE" ] && { echo "No free-tier t2/t3.micro in $AWS_REGION"; exit 1; }
+ELIGIBLE=$($AWS ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true --query "InstanceTypes[].InstanceType" --output text | tr '\t' '\n')
+# (Bigger "free-tier eligible" types exist on the credit-based Free plan, but they use the credit up far faster.)
+TYPE=$(echo "$ELIGIBLE" | grep -xE 't3.micro|t2.micro' | sort | tail -1)
+[ -n "$TYPE" ] || { echo "No free-tier t2/t3.micro in $AWS_REGION (eligible here: $(echo $ELIGIBLE))"; exit 1; }
 echo "Instance type: $TYPE"
 
 AMI=$($AWS ssm get-parameter --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id --query Parameter.Value --output text)
@@ -85,8 +86,10 @@ cat > "$STATE/notify.json" <<JSON
  {"Notification":{"NotificationType":"FORECASTED","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},
   "Subscribers":[{"SubscriptionType":"EMAIL","Address":"$EMAIL"}]}]
 JSON
-$AWS budgets create-budget --account-id "$ACCOUNT" --budget "file://$STATE/budget.json" \
-  --notifications-with-subscribers "file://$STATE/notify.json" 2>/dev/null || echo "(budget already exists)"
+if [ -n "$EMAIL" ]; then
+  $AWS budgets create-budget --account-id "$ACCOUNT" --budget "file://$STATE/budget.json" \
+    --notifications-with-subscribers "file://$STATE/notify.json" 2>/dev/null || echo "(budget already exists)"
+fi
 
 DOMAIN="$(echo "$EIP" | tr . -).sslip.io"
 cat > "$STATE/server.env" <<ENV

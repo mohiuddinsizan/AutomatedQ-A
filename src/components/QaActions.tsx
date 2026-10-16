@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useState } from "react";
-import { confirmQuestion, retryAnswer, rateReply, replyThread, discardDraft, type QaFormState } from "@/app/actions/qa";
+import { confirmQuestion, retryAnswer, rateReply, replyThread, discardDraft, forwardToTeacher, type QaFormState } from "@/app/actions/qa";
 import { Alert, Button } from "./ui";
 import { Icon } from "./icons";
 import { AnswerProgress } from "./AnswerProgress";
@@ -203,5 +203,76 @@ export function ReplyForm({ threadId }: { threadId: number }) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/** Sends the question as it is (photo, voice and all) to a teacher. */
+export function ForwardForm({ threadId, compact = false }: { threadId: number; compact?: boolean }) {
+  const [state, action, pending] = useActionState<QaFormState, FormData>(forwardToTeacher, undefined);
+  const [open, setOpen] = useState(!compact);
+  if (state?.ok) return <Alert tone="ok">{state.ok}</Alert>;
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-2 text-sm font-semibold text-pen hover:underline">
+        <Icon name="teacher" className="size-4" /> Or send it straight to a teacher
+      </button>
+    );
+  }
+  return (
+    <form action={action} className="flex flex-col gap-3">
+      <input type="hidden" name="threadId" value={threadId} />
+      <label htmlFor={`note-${threadId}`} className="text-sm font-semibold text-ink">Anything to add for the teacher? <span className="font-normal text-ink-faint">(optional)</span></label>
+      <textarea id={`note-${threadId}`} name="note" rows={2} maxLength={1000} placeholder="e.g. প্রশ্নটা ছবির চিত্রের উপর, চিত্রটা দেখে বুঝিয়ে দিন"
+        className="rounded-xl border border-rule bg-sheet px-4 py-3 text-base text-ink focus:border-brand-indigo focus:outline-none focus:ring-4 focus:ring-brand-indigo/15" />
+      {state?.error && <Alert>{state.error}</Alert>}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" variant="accent" disabled={pending}><Icon name="teacher" /> {pending ? "Sending…" : "Send to a teacher"}</Button>
+        <span className="text-sm text-ink-soft">Uses one question. The teacher sees your photo and hears your voice note.</span>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * When the AI tutor couldn't handle a question: say why, and offer the way forward
+ * instead of a dead end — a teacher, another try, or discard.
+ */
+export function AiIssuePanel({ threadId, verdict, note, question }: { threadId: number; verdict: string; note: string | null; question: string }) {
+  const [retry, setRetry] = useState(false);
+  const offTopic = verdict === "off_topic";
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex gap-3 rounded-xl border border-brand-orange/30 bg-gradient-to-r from-brand-orange/12 to-transparent p-4">
+        <span className="chip-orange grid size-11 shrink-0 place-items-center rounded-xl"><Icon name="sparkle" className="size-6" /></span>
+        <div>
+          <p className="font-bold text-ink">
+            {offTopic ? "The AI tutor didn't recognise this as a study question" : "The AI tutor couldn't make this out clearly"}
+          </p>
+          {note && <p className="mt-1 text-ink">{note}</p>}
+          <p className="mt-1 text-sm text-ink-soft">
+            {offTopic ? "If it is a study question, a teacher can answer it." : "A teacher can look at your photo and listen to your voice note, so they can still help."}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-rule p-4">
+        <p className="mb-3 font-semibold text-ink">1. Send it to a teacher</p>
+        <ForwardForm threadId={threadId} />
+      </div>
+
+      <div className="rounded-xl border border-rule p-4">
+        <p className="mb-1 font-semibold text-ink">2. Or write it out and let the AI try again</p>
+        {retry ? (
+          <div className="mt-3"><ConfirmForm threadId={threadId} question={question} /></div>
+        ) : (
+          <button type="button" onClick={() => setRetry(true)} className="mt-1 text-sm font-semibold text-pen hover:underline">Type the question</button>
+        )}
+      </div>
+
+      <form action={discardDraft}>
+        <input type="hidden" name="threadId" value={threadId} />
+        <Button type="submit" variant="ghost" size="sm">Discard this question</Button>
+      </form>
+    </div>
   );
 }

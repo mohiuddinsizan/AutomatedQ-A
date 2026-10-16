@@ -58,6 +58,8 @@ export async function getThread(user: CurrentUser, threadId: number) {
     hidden: s.qaThreads.hidden,
     teacherId: s.qaThreads.teacherId,
     quotaCharged: s.qaThreads.quotaCharged,
+    aiVerdict: s.qaThreads.aiVerdict,
+    aiNote: s.qaThreads.aiNote,
     createdAt: s.qaThreads.createdAt,
     updatedAt: s.qaThreads.updatedAt,
     escalatedAt: s.qaThreads.escalatedAt,
@@ -195,4 +197,33 @@ export async function mentorPhotoIds(sessionIds: number[]) {
     .from(s.mentorAttachments).where(inArray(s.mentorAttachments.sessionId, sessionIds)).orderBy(asc(s.mentorAttachments.id));
   for (const r of rows) map.set(r.sessionId, [...(map.get(r.sessionId) ?? []), r.id]);
   return map;
+}
+
+/** Status groups for the "all questions" lists. */
+export const STATUS_GROUPS: { key: string; label: string; statuses: QaStatus[] }[] = [
+  { key: "all", label: "All", statuses: ["awaiting_ai", "ai_answered", "escalated", "teacher_claimed", "answered", "resolved", "closed_timeout"] },
+  { key: "waiting", label: "Waiting for a teacher", statuses: ["escalated"] },
+  { key: "progress", label: "Teacher answering", statuses: ["teacher_claimed"] },
+  { key: "replied", label: "Teacher replied", statuses: ["answered"] },
+  { key: "ai", label: "AI answered", statuses: ["ai_answered", "awaiting_ai"] },
+  { key: "solved", label: "Solved / closed", statuses: ["resolved", "closed_timeout"] },
+];
+
+/** Search across the question text, the student's name and roll. */
+export function questionSearch(q: string): SQL | undefined {
+  const term = q.trim().replace(/[%_]/g, "").slice(0, 80);
+  if (!term) return undefined;
+  const like = `%${term}%`;
+  return sql`(${s.qaThreads.question} ilike ${like} or ${s.users.name} ilike ${like} or ${s.users.username} ilike ${like})`;
+}
+
+/** How many questions match, using the same joins as questionRows (so search works). */
+export async function questionCount(where: SQL | undefined) {
+  const [row] = await db.select({ n: sql<number>`count(*)::int` })
+    .from(s.qaThreads)
+    .innerJoin(s.courses, eq(s.courses.id, s.qaThreads.courseId))
+    .innerJoin(s.subjects, eq(s.subjects.id, s.qaThreads.subjectId))
+    .innerJoin(s.users, eq(s.users.id, s.qaThreads.studentId))
+    .where(where);
+  return row?.n ?? 0;
 }

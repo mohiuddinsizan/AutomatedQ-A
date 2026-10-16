@@ -197,6 +197,10 @@ export const qaThreads = pgTable("qa_threads", {
   question: text("question"),
   status: qaStatusEnum("status").default("awaiting_ai").notNull(),
   quotaCharged: boolean("quota_charged").default(false).notNull(),
+  // Set when the AI tutor couldn't handle the question: "unclear" (couldn't read or hear it)
+  // or "off_topic". The student can then send it to a teacher instead; nothing is thrown away.
+  aiVerdict: varchar("ai_verdict", { length: 20 }),
+  aiNote: text("ai_note"),
   teacherId: integer("teacher_id").references(() => teachers.userId, { onDelete: "set null" }),
   escalatedAt: timestamp("escalated_at", { withTimezone: true }),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),

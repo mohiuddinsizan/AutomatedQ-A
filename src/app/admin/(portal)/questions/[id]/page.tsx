@@ -28,6 +28,14 @@ export default async function AdminQuestion({ params }: { params: Promise<{ id: 
         </PageTitle>
       </div>
 
+      {(thread.aiVerdict || thread.aiNote) && !thread.messages.some((m) => m.senderType === "ai") && (
+        <div className="mb-4">
+          <Alert tone="warn">
+            The AI tutor couldn&apos;t answer this{thread.aiVerdict === "off_topic" ? " (it didn't recognise a study question)" : " (it couldn't read or hear it clearly)"}
+            {thread.aiNote ? <>: {thread.aiNote}</> : "."} Check the student&apos;s message{thread.messages[0]?.files.length ? ", photo or voice note" : ""} below.
+          </Alert>
+        </div>
+      )}
       <ThreadView thread={thread} viewer="staff" />
 
       <div className="mt-6 grid gap-4">

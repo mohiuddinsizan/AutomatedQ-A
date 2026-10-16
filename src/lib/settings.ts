@@ -5,6 +5,9 @@ import { db, schema } from "@/db";
 /** Admin-editable settings, with the defaults used until someone changes them. */
 export const SETTING_DEFAULTS = {
   "ai.provider": "gemini" as "gemini" | "openai",
+  // Chosen in Settings; "" means use the .env value or the built-in default.
+  "ai.openai_model": "" as string,
+  "ai.gemini_model": "" as string,
   "qa.consume_on": "submit" as "submit" | "escalate",
   "qa.max_followups": 3,
   "mentor.reply_template": "Knock the mentor on this number on WhatsApp for the class link.",

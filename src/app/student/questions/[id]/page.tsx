@@ -4,7 +4,7 @@ import { getThread } from "@/lib/qa";
 import { fmtDateTime } from "@/lib/format";
 import { BackLink, Badge, Card, LinkButton } from "@/components/ui";
 import { QuestionProgress, ThreadView } from "@/components/ThreadView";
-import { ConfirmForm, RetryForm, RateForm } from "@/components/QaActions";
+import { ConfirmForm, RetryForm, RateForm, ForwardForm, AiIssuePanel } from "@/components/QaActions";
 import { Icon } from "@/components/icons";
 
 export const metadata = { title: "Question" };
@@ -42,10 +42,24 @@ export default async function QuestionPage({ params }: { params: Promise<{ id: s
       <ThreadView thread={thread} viewer="student" />
 
       <div className="mt-6">
-        {thread.status === "draft" && (
-          <Card className="border-brand-orange/40 p-4 sm:p-6"><ConfirmForm threadId={thread.id} question={thread.question ?? ""} /></Card>
+        {thread.status === "draft" && thread.aiVerdict && (
+          <Card className="border-brand-orange/40 p-4 sm:p-6">
+            <AiIssuePanel threadId={thread.id} verdict={thread.aiVerdict} note={thread.aiNote} question={thread.question ?? ""} />
+          </Card>
         )}
-        {thread.status === "awaiting_ai" && <Card className="p-4 sm:p-6"><RetryForm threadId={thread.id} /></Card>}
+        {thread.status === "draft" && !thread.aiVerdict && (
+          <Card className="border-brand-orange/40 p-4 sm:p-6">
+            <ConfirmForm threadId={thread.id} question={thread.question ?? ""} />
+            {/* A figure the AI can't use well, or a voice note it misheard: a teacher is one tap away. */}
+            <div className="mt-4 border-t border-rule pt-4"><ForwardForm threadId={thread.id} compact /></div>
+          </Card>
+        )}
+        {thread.status === "awaiting_ai" && (
+          <Card className="p-4 sm:p-6">
+            <RetryForm threadId={thread.id} />
+            <div className="mt-4 border-t border-rule pt-4"><ForwardForm threadId={thread.id} compact /></div>
+          </Card>
+        )}
         {(thread.status === "ai_answered" || thread.status === "answered") && lastReply && (
           <Card className="border-pen/25 p-4 shadow-[0_16px_40px_-28px_rgb(46_49_146/0.6)] sm:p-6">
             <RateForm threadId={thread.id} stage={thread.status === "ai_answered" ? "ai" : "teacher"} alreadyRated={Boolean(lastReply.rating)} />

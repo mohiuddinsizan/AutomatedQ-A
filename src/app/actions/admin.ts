@@ -1,13 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { db, schema } from "@/db";
 import { requirePortal, type CurrentUser } from "@/lib/dal";
 import { hashPassword } from "@/lib/password";
 import { setSetting } from "@/lib/settings";
+import { aiStatus, testModel } from "@/lib/ai";
+import { isAllowedModel } from "@/lib/ai-models";
 
 const s = schema;
 
@@ -126,43 +128,65 @@ export async function updateCourse(_: AdminFormState, fd: FormData): Promise<Adm
   return { ok: "Course settings saved. New enrollments start with these allowances." };
 }
 
-/** Course-wide change. Only students with an active enrollment are touched (AGENTS.md rule 5). */
-export async function applyCourseQuota(_: AdminFormState, fd: FormData): Promise<AdminFormState> {
-  const me = await requirePortal("admin");
-  const parsed = z.object({
-    courseId: z.coerce.number().int(),
-    mode: z.enum(["set", "add"]),
-    qa: z.coerce.number().int().min(-999).max(999),
-    sessions: z.coerce.number().int().min(-999).max(999),
-  }).safeParse(Object.fromEntries(fd));
+const bulkSchema = z.object({
+  qaMode: z.enum(["keep", "add", "set"]),
+  qa: z.coerce.number().int().min(-999).max(999).catch(0),
+  sessionMode: z.enum(["keep", "add", "set"]),
+  sessions: z.coerce.number().int().min(-999).max(999).catch(0),
+});
+
+/**
+ * Changes Q&A and/or mentor-session allowances in bulk: for one course, or for every
+ * active course. Only students with an active enrollment are touched (AGENTS.md rule 5).
+ * Each allowance is changed only if asked: "keep" leaves it exactly as it is.
+ */
+async function bulkQuota(me: CurrentUser, fd: FormData, courseId: number | null) {
+  const parsed = bulkSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: "Enter whole numbers." };
   const v = parsed.data;
-  if (v.mode === "set" && (v.qa < 0 || v.sessions < 0)) return { error: "Allowances can't be negative." };
+  if (v.qaMode === "keep" && v.sessionMode === "keep") return { error: "Choose what to change: Q&A, mentor sessions, or both." };
+  if ((v.qaMode === "set" && v.qa < 0) || (v.sessionMode === "set" && v.sessions < 0)) return { error: "Allowances can't be negative." };
 
-  const active = db.select({ id: s.enrollments.studentId }).from(s.enrollments)
-    .where(and(eq(s.enrollments.courseId, v.courseId), eq(s.enrollments.status, "active")));
+  const scope = courseId
+    ? sql`e.course_id = ${courseId}`
+    : sql`e.course_id in (select id from courses where status = 'active')`;
 
   // Anyone actively enrolled without an allowance row gets one first.
   await db.execute(sql`
     insert into quotas (student_id, course_id, qa_remaining, session_remaining, updated_by)
     select e.student_id, e.course_id, 0, 0, ${me.id} from enrollments e
-    where e.course_id = ${v.courseId} and e.status = 'active'
+    where e.status = 'active' and ${scope}
     on conflict do nothing`);
 
-  const changed = await db.update(s.quotas).set(
-    v.mode === "set"
-      ? { qaRemaining: v.qa, sessionRemaining: v.sessions, updatedBy: me.id, updatedAt: new Date() }
-      : {
-          qaRemaining: sql`greatest(0, ${s.quotas.qaRemaining} + ${v.qa})`,
-          sessionRemaining: sql`greatest(0, ${s.quotas.sessionRemaining} + ${v.sessions})`,
-          updatedBy: me.id, updatedAt: new Date(),
-        },
-  ).where(and(eq(s.quotas.courseId, v.courseId), inArray(s.quotas.studentId, active)))
-    .returning({ id: s.quotas.studentId });
+  const qa = v.qaMode === "set" ? sql`${v.qa}` : v.qaMode === "add" ? sql`greatest(0, q.qa_remaining + ${v.qa})` : sql`q.qa_remaining`;
+  const sessions = v.sessionMode === "set" ? sql`${v.sessions}` : v.sessionMode === "add" ? sql`greatest(0, q.session_remaining + ${v.sessions})` : sql`q.session_remaining`;
 
-  await audit(me, `quota.course.${v.mode}`, "course", v.courseId, { qa: v.qa, sessions: v.sessions, students: changed.length });
-  revalidatePath(`/admin/courses/${v.courseId}`);
-  return { ok: `Updated the allowance of ${changed.length.toLocaleString()} actively enrolled students.` };
+  const result = await db.execute(sql`
+    update quotas q set qa_remaining = ${qa}, session_remaining = ${sessions}, updated_by = ${me.id}, updated_at = now()
+    from enrollments e
+    where e.student_id = q.student_id and e.course_id = q.course_id and e.status = 'active' and ${scope}`);
+  const n = result.rowCount ?? 0;
+
+  await audit(me, courseId ? "quota.course.bulk" : "quota.all.bulk", "course", courseId ?? "all", { ...v, students: n });
+  revalidatePath("/admin", "layout");
+
+  const what = [
+    v.qaMode === "set" ? `Q&A set to ${v.qa}` : v.qaMode === "add" ? `${v.qa >= 0 ? "+" : ""}${v.qa} Q&A` : null,
+    v.sessionMode === "set" ? `mentor sessions set to ${v.sessions}` : v.sessionMode === "add" ? `${v.sessions >= 0 ? "+" : ""}${v.sessions} mentor sessions` : null,
+  ].filter(Boolean).join(" and ");
+  return { ok: `Done: ${what} for ${n.toLocaleString()} actively enrolled student-course${n === 1 ? "" : "s"}.` };
+}
+
+export async function applyCourseQuota(_: AdminFormState, fd: FormData): Promise<AdminFormState> {
+  const me = await requirePortal("admin");
+  return bulkQuota(me, fd, Number(fd.get("courseId")));
+}
+
+export async function applyAllCoursesQuota(_: AdminFormState, fd: FormData): Promise<AdminFormState> {
+  const me = await requirePortal("admin");
+  // A change to every student at once: make the admin confirm it on purpose.
+  if (fd.get("confirm") !== "on") return { error: "Tick the box to confirm this changes every active student." };
+  return bulkQuota(me, fd, null);
 }
 
 export async function setCourseSubjects(_: AdminFormState, fd: FormData): Promise<AdminFormState> {
@@ -301,10 +325,24 @@ export async function saveSettings(_: AdminFormState, fd: FormData): Promise<Adm
 export async function setAiProvider(_: AdminFormState, fd: FormData): Promise<AdminFormState> {
   const me = await requirePortal("admin");
   const provider = fd.get("provider") === "openai" ? "openai" : "gemini";
+  const openaiModel = String(fd.get("openaiModel") ?? "");
+  const geminiModel = String(fd.get("geminiModel") ?? "");
+  if (!isAllowedModel("openai", openaiModel) || !isAllowedModel("gemini", geminiModel)) return { error: "Choose a model from the list." };
+
+  // Check the AI that will answer can really use the chosen model, before switching to it.
+  const status = await aiStatus();
+  const model = provider === "openai" ? openaiModel : geminiModel;
+  if (status.configured[provider]) {
+    const problem = await testModel(provider, model);
+    if (problem) return { error: `${model} didn't work with your key, so nothing was changed. (${problem})` };
+  }
+
   await setSetting("ai.provider", provider, me.id);
-  await audit(me, "settings.ai_provider", "settings", "ai.provider", { provider });
+  await setSetting("ai.openai_model", openaiModel, me.id);
+  await setSetting("ai.gemini_model", geminiModel, me.id);
+  await audit(me, "settings.ai", "settings", "ai", { provider, openaiModel, geminiModel });
   revalidatePath("/admin/settings");
-  return { ok: provider === "openai" ? "ChatGPT will answer new questions." : "Gemini will answer new questions." };
+  return { ok: `Saved. New questions are answered by ${provider === "openai" ? "ChatGPT" : "Gemini"} using ${model}${status.configured[provider] ? " (tested just now)" : ""}.` };
 }
 
 /* ---------- Staff links ---------- */

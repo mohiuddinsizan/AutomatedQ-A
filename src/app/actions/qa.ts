@@ -134,8 +134,15 @@ export async function askQuestion(_: QaFormState, fd: FormData): Promise<QaFormS
       if (err instanceof AiUnavailableError) return { error: BUSY };
       throw err;
     }
-    if (!r.relevant || !r.answer?.trim()) {
-      return { error: r.reason || "Only study-related questions can be asked here." };
+    if (r.verdict !== "ok") {
+      // Not answered, but not thrown away either: the student can fix it or send it to a teacher.
+      const [t] = await db.insert(s.qaThreads).values({
+        studentId: me.id, courseId: course.id, subjectId: await pickSubject(r.subject),
+        question: r.question || text, status: "draft", aiVerdict: r.verdict, aiNote: r.reason || null,
+      }).returning({ id: s.qaThreads.id });
+      await db.insert(s.qaMessages).values({ threadId: t.id, senderType: "student", senderId: me.id, body: text, aiMeta: { screen: r.meta } });
+      revalidatePath("/student", "layout");
+      redirect(`/student/questions/${t.id}`);
     }
     const charged = consumeOn === "submit" ? await charge(me.id, course.id) : false;
     if (consumeOn === "submit" && !charged) return { error: "You have no questions left in this course." };
@@ -160,13 +167,13 @@ export async function askQuestion(_: QaFormState, fd: FormData): Promise<QaFormS
       if (err instanceof AiUnavailableError) return { error: BUSY };
       throw err;
     }
-    if (!x.relevant || !x.question?.trim()) {
-      return { error: x.reason || "We couldn't find a study question in this. Please try again or type it." };
-    }
-
+    // Kept even when the AI can't make it out: a teacher can still look at the photo or listen.
+    const unclear = x.verdict !== "ok" || !x.question.trim();
     const [t] = await db.insert(s.qaThreads).values({
       studentId: me.id, courseId: course.id, subjectId: await pickSubject(x.subject),
-      question: x.question.trim(), status: "draft",
+      question: x.question.trim() || x.transcript.trim() || text || null, status: "draft",
+      aiVerdict: unclear ? (x.verdict === "off_topic" ? "off_topic" : "unclear") : null,
+      aiNote: unclear ? x.reason || null : null,
     }).returning({ id: s.qaThreads.id });
     const [m] = await db.insert(s.qaMessages).values({
       threadId: t.id, senderType: "student", senderId: me.id, body: text || null, aiMeta: { extract: x.meta },
@@ -205,11 +212,13 @@ async function runAnswer(threadId: number): Promise<QaFormState> {
     throw err;
   }
 
-  if (r.answer.trim() === "NOT_RELEVANT") {
-    // The edited text isn't a study question. Give the allowance back and let them fix it.
+  if (r.verdict !== "ok") {
+    // The AI can't answer it. Give the allowance back; the student chooses what next
+    // (fix it, or send it to a teacher who can see the photos).
     if (t.quotaCharged) await refund(t.studentId, t.courseId);
-    await db.update(s.qaThreads).set({ status: "draft", quotaCharged: false }).where(eq(s.qaThreads.id, threadId));
-    return { error: "This doesn't look like a study question. Please edit it and confirm again." };
+    await db.update(s.qaThreads).set({ status: "draft", quotaCharged: false, aiVerdict: r.verdict, aiNote: r.reason || null })
+      .where(eq(s.qaThreads.id, threadId));
+    return undefined;
   }
 
   await db.transaction(async (tx) => {
@@ -243,7 +252,7 @@ export async function confirmQuestion(_: QaFormState, fd: FormData): Promise<QaF
   }
 
   // Claim the draft so a double tap can't answer it twice.
-  const moved = await db.update(s.qaThreads).set({ question, status: "awaiting_ai", quotaCharged: charged })
+  const moved = await db.update(s.qaThreads).set({ question, status: "awaiting_ai", quotaCharged: charged, aiVerdict: null, aiNote: null })
     .where(and(eq(s.qaThreads.id, t.id), eq(s.qaThreads.status, "draft"))).returning({ id: s.qaThreads.id });
   if (!moved.length) {
     if (charged && !t.quotaCharged) await refund(me.id, t.courseId);
@@ -265,6 +274,41 @@ export async function retryAnswer(_: QaFormState, fd: FormData): Promise<QaFormS
   const result = await runAnswer(t.id);
   revalidatePath(`/student/questions/${t.id}`);
   return result;
+}
+
+/**
+ * When the AI tutor can't answer (couldn't read it, thinks it's off topic, or is busy),
+ * the student can send the question as it is to a teacher, who sees the photos and voice note.
+ */
+export async function forwardToTeacher(_: QaFormState, fd: FormData): Promise<QaFormState> {
+  const me = await requirePortal("student");
+  const t = await ownThread(me, Number(fd.get("threadId")));
+  if (!t || !["draft", "awaiting_ai"].includes(t.status)) return { error: "This question has moved on. Refresh the page." };
+  const note = String(fd.get("note") ?? "").trim().slice(0, 1000);
+
+  // A teacher's time is the allowance, whichever way the setting is.
+  let charged = t.quotaCharged;
+  if (!charged) {
+    if (!(await charge(me.id, t.courseId))) return { error: "You have no questions left in this course." };
+    charged = true;
+  }
+
+  const moved = await db.transaction(async (tx) => {
+    const done = await tx.update(s.qaThreads).set({
+      status: "escalated", escalatedAt: new Date(), quotaCharged: charged,
+      aiNote: t.aiNote ?? (t.status === "awaiting_ai" ? "The AI service was busy." : null),
+      aiVerdict: t.aiVerdict ?? (t.status === "awaiting_ai" ? "unclear" : null),
+    }).where(and(eq(s.qaThreads.id, t.id), eq(s.qaThreads.status, t.status))).returning({ id: s.qaThreads.id });
+    if (!done.length) return false;
+    if (note) await tx.insert(s.qaMessages).values({ threadId: t.id, senderType: "student", senderId: me.id, body: note });
+    return true;
+  });
+  if (!moved) {
+    if (charged && !t.quotaCharged) await refund(me.id, t.courseId);
+    return { error: "This question has moved on. Refresh the page." };
+  }
+  revalidatePath(`/student/questions/${t.id}`);
+  return { ok: "Sent to a teacher. They can see your photo and hear your voice note. The reply will appear here." };
 }
 
 export async function discardDraft(fd: FormData) {

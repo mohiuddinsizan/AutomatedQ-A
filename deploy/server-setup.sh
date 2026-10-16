@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # One-time setup of the Ubuntu 24.04 server (run as root by deploy.sh --first).
 # Installs Node, PostgreSQL, nginx with rate limits, HTTPS, firewall, swap and the daily import.
-# Usage: server-setup.sh <domain> <cert-email>
+# Usage: server-setup.sh <domain> [cert-email]
 set -euo pipefail
-DOMAIN="$1"; EMAIL="$2"
+DOMAIN="$1"; EMAIL="${2:-}"
 export DEBIAN_FRONTEND=noninteractive
 
 # 1 GB of RAM is tight for building Next.js: add 2 GB of swap.
@@ -121,11 +121,12 @@ printf "[Journal]\nSystemMaxUse=200M\n" > /etc/systemd/journald.conf.d/size.conf
 systemctl restart systemd-journald
 
 # Free HTTPS (needed for the microphone on phones). Renews itself.
-certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect || echo "!! HTTPS not set up yet; rerun: certbot --nginx -d $DOMAIN"
+if [ -n "$EMAIL" ]; then CERTMAIL=(-m "$EMAIL"); else CERTMAIL=(--register-unsafely-without-email); fi
+certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos "${CERTMAIL[@]}" --redirect || echo "!! HTTPS not set up yet; rerun: certbot --nginx -d $DOMAIN"
 
 # Daily import at 03:00 Bangladesh time (21:00 UTC), plus a nightly database backup kept for 7 days.
 cat > /etc/cron.d/bigbang <<CRON
-0 21 * * * bigbang . /opt/bigbang/app/.env && curl -s -m 600 -H "Authorization: Bearer \$CRON_SECRET" http://127.0.0.1:3000/api/cron/sync > /var/lib/bigbang/last-sync.json
+0 21 * * * bigbang curl -s -m 1800 -H "Authorization: Bearer \$(grep '^CRON_SECRET=' /opt/bigbang/app/.env | cut -d= -f2-)" http://127.0.0.1:3000/api/cron/sync > /var/lib/bigbang/last-sync.json
 30 20 * * * postgres pg_dump bigbang | gzip > /var/lib/postgresql/bigbang-\$(date +\%a).sql.gz
 CRON
 chmod 644 /etc/cron.d/bigbang

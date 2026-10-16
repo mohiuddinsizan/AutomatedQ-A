@@ -51,7 +51,7 @@ export default async function MyQuestions({ searchParams }: { searchParams: Prom
 
   const threads = await db.select({
     id: s.qaThreads.id, question: s.qaThreads.question, status: s.qaThreads.status, updatedAt: s.qaThreads.updatedAt,
-    course: s.courses.name, subject: s.subjects.name,
+    course: s.courses.name, subject: s.subjects.name, aiVerdict: s.qaThreads.aiVerdict,
   }).from(s.qaThreads)
     .innerJoin(s.courses, eq(s.courses.id, s.qaThreads.courseId))
     .innerJoin(s.subjects, eq(s.subjects.id, s.qaThreads.subjectId))
@@ -94,10 +94,12 @@ export default async function MyQuestions({ searchParams }: { searchParams: Prom
             <Card as="div" className="divide-y divide-rule overflow-hidden">
               {threads.map((t) => (
                 <Link key={t.id} href={`/student/questions/${t.id}`} className="group block p-4 hover:bg-paper sm:px-5">
-                  <p className="line-clamp-2 text-ink group-hover:text-pen">{t.question ?? "Question"}</p>
+                  <p className="line-clamp-2 text-ink group-hover:text-pen">{t.question ?? "Photo / voice question"}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                     <Badge tone="blue">{t.subject}</Badge>
-                    {NEXT[t.status] ? <span className={filter.key === "you" ? "font-medium text-pen" : "text-ink-soft"}>{NEXT[t.status]}</span> : <StatusBadge status={t.status} />}
+                    {t.status === "draft" && t.aiVerdict
+                      ? <span className="font-medium text-warn">The AI couldn&apos;t read it — send it to a teacher</span>
+                      : NEXT[t.status] ? <span className={filter.key === "you" ? "font-medium text-pen" : "text-ink-soft"}>{NEXT[t.status]}</span> : <StatusBadge status={t.status} />}
                     <span className="text-ink-faint">· {fmtAgo(t.updatedAt)}</span>
                   </div>
                 </Link>

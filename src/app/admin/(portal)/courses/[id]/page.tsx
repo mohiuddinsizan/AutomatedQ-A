@@ -7,6 +7,7 @@ import { fmtDate, fmtDateTime, fmtMark } from "@/lib/format";
 import { PageTitle } from "@/components/PortalHeader";
 import { ActionForm } from "@/components/ActionForm";
 import { ResultSyncPanel } from "@/components/ResultSyncPanel";
+import { BulkAllowanceFields } from "@/components/BulkAllowanceFields";
 import { BackLink, Badge, Card, SectionTitle, StatGrid, TableWrap, th, td, Button } from "@/components/ui";
 
 const num = "h-11 w-28 rounded-md border border-rule bg-sheet px-2 text-base text-ink";
@@ -77,16 +78,7 @@ export default async function CourseDetail({ params }: { params: Promise<{ id: s
           <p className="mb-4 text-sm text-ink-soft">Applies to the {active.toLocaleString()} actively enrolled students only.</p>
           <ActionForm action={applyCourseQuota} submit="Apply to all active students" variant="secondary">
             <input type="hidden" name="courseId" value={course.id} />
-            <div className="flex flex-wrap gap-4 text-sm text-ink">
-              <label className="flex items-center gap-2"><input type="radio" name="mode" value="add" defaultChecked className="accent-[var(--color-pen)]" /> Add to what they have</label>
-              <label className="flex items-center gap-2"><input type="radio" name="mode" value="set" className="accent-[var(--color-pen)]" /> Set exactly</label>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              <label className="flex flex-col gap-1 text-sm font-medium text-ink">Questions
-                <input name="qa" type="number" min={-999} max={999} defaultValue={0} className={num} /></label>
-              <label className="flex flex-col gap-1 text-sm font-medium text-ink">Mentor sessions
-                <input name="sessions" type="number" min={-999} max={999} defaultValue={0} className={num} /></label>
-            </div>
+            <BulkAllowanceFields />
           </ActionForm>
         </Card>
       </div>

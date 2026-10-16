@@ -19,7 +19,8 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   return (
     <>
       <PortalHeader portal="teacher" name={user.name} sub={user.username} nav={[
-        { href: "/teacher", label: "Q&A", icon: "chat", exact: true, also: ["/teacher/courses", "/teacher/questions", "/teacher/answered"], badge: waiting },
+        { href: "/teacher", label: "Q&A", icon: "chat", exact: true, also: ["/teacher/courses", "/teacher/questions"], badge: waiting },
+        { href: "/teacher/answered", label: "My answers", icon: "check" },
         { href: "/teacher/sessions", label: "Sessions", icon: "calendar", badge: upcoming },
         { href: "/teacher/links", label: "Tools", icon: "link" },
       ]} />

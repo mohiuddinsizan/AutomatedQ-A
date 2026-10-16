@@ -4,6 +4,7 @@ import { requirePortal } from "@/lib/dal";
 import { getSetting } from "@/lib/settings";
 import { saveSettings, createSubject, setAiProvider } from "@/app/actions/admin";
 import { aiStatus, PROVIDER_LABEL, type Provider } from "@/lib/ai";
+import { MODEL_CHOICES } from "@/lib/ai-models";
 import { PageTitle } from "@/components/PortalHeader";
 import { ActionForm } from "@/components/ActionForm";
 import { Badge, Card, Field, Select, SectionTitle, TextArea } from "@/components/ui";
@@ -43,31 +44,43 @@ export default async function SettingsPage() {
 
       <SectionTitle>AI that answers questions</SectionTitle>
       <Card className="p-5">
-        <ActionForm action={setAiProvider} submit="Save AI choice">
+        <ActionForm action={setAiProvider} submit="Save AI settings" pending="Testing the model…">
           <div className="grid gap-3 sm:grid-cols-2">
             {(["gemini", "openai"] as Provider[]).map((p) => (
-              <label key={p} className="flex cursor-pointer gap-3 rounded-xl border border-rule p-4 transition-colors has-[:checked]:border-brand-indigo/50 has-[:checked]:bg-pen-soft">
-                <input type="radio" name="provider" value={p} defaultChecked={ai.selected === p} className="mt-1 size-4 accent-[var(--color-pen)]" />
-                <span className="min-w-0">
-                  <span className="flex flex-wrap items-center gap-2 font-semibold text-ink">
-                    {PROVIDER_LABEL[p]}
-                    {ai.configured[p] ? <Badge tone="green">Key added</Badge> : <Badge tone="amber">No key yet</Badge>}
-                  </span>
-                  <span className="mt-1 block text-sm text-ink-soft">
-                    Model <code className="text-ink">{ai.models[p][0]}</code>
-                    {p === "gemini" ? <>, falls back to <code className="text-ink">{ai.models.gemini[1]}</code> when busy.</>
-                      : <>; voice notes are transcribed with <code className="text-ink">{ai.models.openai[1]}</code>.</>}
-                  </span>
-                  {!ai.configured[p] && (
-                    <span className="mt-1 block text-sm text-warn">
-                      Add <code>{p === "gemini" ? "AI_API" : "GPT_API"}=…</code> to the server&apos;s <code>.env</code> and restart. Until then the other AI answers.
+              <div key={p} className="flex flex-col gap-3 rounded-xl border border-rule p-4 transition-colors has-[input[type=radio]:checked]:border-brand-indigo/50 has-[input[type=radio]:checked]:bg-pen-soft">
+                <label className="flex cursor-pointer gap-3">
+                  <input type="radio" name="provider" value={p} defaultChecked={ai.selected === p} className="mt-1 size-4 accent-[var(--color-pen)]" />
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-2 font-semibold text-ink">
+                      {PROVIDER_LABEL[p]}
+                      {ai.configured[p] ? <Badge tone="green">Key added</Badge> : <Badge tone="amber">No key yet</Badge>}
                     </span>
-                  )}
+                    <span className="mt-0.5 block text-sm text-ink-soft">Answers new questions when selected.</span>
+                  </span>
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-ink">
+                  Model
+                  <select name={p === "openai" ? "openaiModel" : "geminiModel"} defaultValue={ai.models[p][0]}
+                    className="h-11 rounded-xl border border-rule bg-sheet px-3 text-base font-normal text-ink focus:border-brand-indigo focus:outline-none focus:ring-4 focus:ring-brand-indigo/15">
+                    {MODEL_CHOICES[p].map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                </label>
+                <span className="text-xs text-ink-faint">
+                  {p === "gemini" ? <>When busy, falls back to <code>{ai.models.gemini[1]}</code>.</>
+                    : <>Voice notes are transcribed with <code>{ai.models.openai[1]}</code>.</>}
                 </span>
-              </label>
+                {!ai.configured[p] && (
+                  <span className="text-sm text-warn">
+                    Add <code>{p === "gemini" ? "AI_API" : "GPT_API"}=…</code> to the server&apos;s <code>.env</code> and restart. Until then the other AI answers.
+                  </span>
+                )}
+              </div>
             ))}
           </div>
-          <p className="text-sm text-ink-soft">If the chosen AI is busy or has no key, the other one answers automatically (when it has a key).</p>
+          <p className="text-sm text-ink-soft">
+            Saving tests the selected model with your key first; if it doesn&apos;t work, nothing changes.
+            If the chosen AI is busy or out of credit, the other one answers automatically.
+          </p>
         </ActionForm>
       </Card>
 

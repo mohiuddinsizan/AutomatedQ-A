@@ -4,8 +4,11 @@ import { db, schema } from "@/db";
 import { requirePortal } from "@/lib/dal";
 import { fmtDate } from "@/lib/format";
 import { Tabs } from "@/components/Tabs";
+import { ActionForm } from "@/components/ActionForm";
+import { BulkAllowanceFields } from "@/components/BulkAllowanceFields";
+import { applyAllCoursesQuota } from "@/app/actions/admin";
 import { PageTitle } from "@/components/PortalHeader";
-import { Badge, EmptyState, TableWrap, th, td } from "@/components/ui";
+import { Badge, Card, EmptyState, TableWrap, th, td } from "@/components/ui";
 
 export const metadata = { title: "Courses" };
 
@@ -13,6 +16,10 @@ export default async function CoursesPage({ searchParams }: { searchParams: Prom
   await requirePortal("admin");
   const s = schema;
   const status = (await searchParams).status === "archived" ? "archived" : (await searchParams).status === "all" ? "all" : "active";
+
+  const [{ activeEnrollments }] = await db.select({ activeEnrollments: sql<number>`count(*)::int` })
+    .from(s.enrollments).innerJoin(s.courses, eq(s.courses.id, s.enrollments.courseId))
+    .where(sql`${s.enrollments.status} = 'active' and ${s.courses.status} = 'active'`);
 
   const rows = await db.select({
     id: s.courses.id, name: s.courses.name, code: s.courses.code, batch: s.courses.batch, status: s.courses.status,
@@ -26,6 +33,22 @@ export default async function CoursesPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageTitle sub="Courses come from BigBang. Set allowances, subjects and what students can see here.">Courses</PageTitle>
+      <Card className="relative mb-8 overflow-hidden p-5">
+        <span className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-orange to-brand-red" aria-hidden />
+        <h2 className="text-xl text-ink">Change allowance for all courses</h2>
+        <p className="mb-4 text-sm text-ink-soft">
+          Applies to every student with an active enrollment in an active course ({activeEnrollments.toLocaleString()} student-courses right now).
+          To change just one course, open it below; for one student, use Students.
+        </p>
+        <ActionForm action={applyAllCoursesQuota} submit="Apply to all courses" pending="Applying…" variant="accent">
+          <BulkAllowanceFields />
+          <label className="flex items-start gap-2 text-sm text-ink">
+            <input type="checkbox" name="confirm" className="mt-0.5 size-4 accent-[var(--color-pen)]" />
+            I understand this changes the allowance of every active student.
+          </label>
+        </ActionForm>
+      </Card>
+
       <Tabs label="Filter" items={(["active", "archived", "all"] as const).map((k) => ({ href: `?status=${k}`, label: k[0].toUpperCase() + k.slice(1), active: status === k }))} />
       {rows.length === 0 ? <EmptyState title="No courses here" /> : (
         <TableWrap>
