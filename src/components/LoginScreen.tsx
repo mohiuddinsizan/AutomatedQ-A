@@ -46,6 +46,18 @@ export async function LoginScreen(props: Props) {
           </div>
           <div className="card overflow-hidden rounded-3xl">
             <div className="brand-stripe h-1.5" aria-hidden />
+            {/* One link for everyone: switch to the teacher or admin login from here. */}
+            <nav className="px-6 pt-5 sm:px-8" aria-label="Who is signing in">
+              <div className="grid grid-cols-3 gap-1 rounded-xl bg-paper p-1 ring-1 ring-rule">
+                {([["student", "/login", "Student"], ["teacher", "/teacher/login", "Teacher"], ["admin", "/admin/login", "Admin"]] as const).map(([key, href, label]) => (
+                  <Link key={key} href={href} aria-current={props.portal === key ? "page" : undefined}
+                    className={`rounded-lg py-2 text-center text-sm font-semibold transition-colors
+                      ${props.portal === key ? "btn-primary" : "text-ink-soft hover:bg-sheet hover:text-pen"}`}>
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </nav>
             <div className="border-b border-rule px-6 pt-7 pb-5 sm:px-8">
               <h1 className="text-gradient text-[1.9rem]">{props.title}</h1>
               <p className="mt-1 text-ink-soft">{props.intro}</p>
