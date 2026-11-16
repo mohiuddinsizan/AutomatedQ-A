@@ -10,6 +10,7 @@ import { verifyPassword, hashPassword, PASSWORD_MIN } from "@/lib/password";
 import { PORTALS, homeForRole, type Portal } from "@/lib/roles";
 import { requireUser } from "@/lib/dal";
 import { isLocked, recordFailure, clearFailures } from "@/lib/rate-limit";
+import { canonicalRoll } from "@/lib/roll";
 
 export type FormState = { error?: string; ok?: string; username?: string } | undefined;
 
@@ -30,7 +31,9 @@ export async function login(_: FormState, formData: FormData): Promise<FormState
     return { error: parsed.error.issues[0].message, username: String(formData.get("username") ?? "") };
   }
 
-  const { portal, username, password } = parsed.data;
+  const { portal, password } = parsed.data;
+  // Students may type their roll with or without the leading zeros ("476" or "000476").
+  const username = portal === "student" ? canonicalRoll(parsed.data.username) : parsed.data.username;
   const key = `${portal}:${username.toLowerCase()}`;
   const wrong = portal === "student"
     ? "Roll number or password is incorrect."

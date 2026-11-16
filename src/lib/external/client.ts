@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { canonicalRoll } from "@/lib/roll";
 
 /**
  * Client for the external student API.
@@ -14,7 +15,7 @@ export const externalItemSchema = z.object({
   course_session: z.string().nullish(),
   course_is_archived: z.boolean().default(false),
   course_is_deleted: z.boolean().default(false),
-  roll: z.union([z.string(), z.number()]).transform(String),
+  roll: z.union([z.string(), z.number()]).transform(canonicalRoll),
   name: z.string(),
   phone_number: z.string().nullish(),
   guardian_phone_number: z.string().nullish(),
@@ -131,7 +132,7 @@ export async function fetchLiveRolls(courseExternalId: string) {
     const body = responseSchema.parse(await getJson(url.toString(), apiKey));
     for (const raw of body.items) {
       const r = (raw as { roll?: unknown }).roll;
-      if (typeof r === "string" || typeof r === "number") rolls.add(String(r).trim());
+      if (typeof r === "string" || typeof r === "number") rolls.add(canonicalRoll(r));
     }
     if (!body.pagination.has_more) return rolls;
   }
@@ -164,7 +165,7 @@ const examResultSchema = z.object({
 });
 
 const studentResultsSchema = z.object({
-  roll: z.union([z.string(), z.number()]).transform((v) => String(v).trim()),
+  roll: z.union([z.string(), z.number()]).transform(canonicalRoll),
   name: z.string().nullish(),
   phone_number: z.string().nullish(),
   enrolled: z.boolean(),
